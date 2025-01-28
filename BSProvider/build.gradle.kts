@@ -17,8 +17,8 @@ cloudstream {
     * */
     status = 1
 
-    tvTypes = listOf("Others")
+    tvTypes = listOf("TvSeries")
 
     language = "de"
-    iconUrl = "https://www.google.com/s2/favicons?domain=www.bs.to&sz=%size%"
+    iconUrl = "https://www.google.com/s2/favicons?domain=www.burning-series.io&sz=%size%"
 }
