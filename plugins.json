@@ -1,0 +1,21 @@
+[
+    {
+        "iconUrl": "https://www.google.com/s2/favicons?domain=www.burning-series.io&sz=%size%",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/davdklkn/myPlugins",
+        "fileSize": 14587,
+        "status": 1,
+        "language": "de",
+        "authors": [
+            "davd"
+        ],
+        "tvTypes": [
+            "TvSeries"
+        ],
+        "version": 15,
+        "internalName": "BSProvider",
+        "description": "Watch Content from Burning Series",
+        "url": "https://raw.githubusercontent.com/davdklkn/myPlugins/builds/BSProvider.cs3",
+        "name": "BSProvider"
+    }
+]
