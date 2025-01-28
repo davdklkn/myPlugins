@@ -42,7 +42,7 @@ class BSProvider : MainAPI() {
     override var name = "Dailymotion"
     override val supportedTypes = setOf(TvType.Others)
 
-    override var lang = "en"
+    override var lang = "de"
 
     override val hasMainPage = true
 
