@@ -1,0 +1,9 @@
+
+{
+    "name": "my Cloudstream providers repository",
+    "description": "my Cloudstream extension Repository",
+    "manifestVersion": 1,
+    "pluginLists": [
+      "https://raw.githubusercontent.com/davdklkn/myPlugins/builds/plugins.json"
+    ]
+}
