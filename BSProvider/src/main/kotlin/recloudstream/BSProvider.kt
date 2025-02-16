@@ -75,38 +75,35 @@ class BSProvider : MainAPI() {
     // }
     // New search function for BS.to
 override suspend fun search(query: String): List<SearchResponse> {
-        // Step 1: Encode the search query and construct the search URL
-        val searchUrl = "$mainUrl/suche?q=${query.encodeUri()}"
+    // Request the page that lists available series
+    val pageContent = app.get("$mainUrl/andere-serien").text
+    
+    // Regex to match the series list entries
+    val regex = """<a href="serie/([^"]+)" title="([^"]+)">([^<]+)</a>""".toRegex()
+    val matches = regex.findAll(pageContent)
 
-        // Step 2: Fetch the HTML content of the search results page
-        val response = app.get(searchUrl).text
-
-        // Step 3: Parse the HTML content using Jsoup
-        val document: Document = Jsoup.parse(response)
-
-        // Step 4: Extract the series from the search results
-        val searchResults = mutableListOf<SearchResponse>()
-        
-        // Look for all <li> elements with a <a> tag (these contain the series links)
-        for (element: Element in document.select("li > a")) {
-            val title = element.attr("title")
-            val seriesUrl = element.attr("href")
-
-            // Map each series to the SearchResponse format
-            searchResults.add(
-                SearchResponse(
-                    title = title,
-                    url = "$mainUrl$seriesUrl",
-                    type = TvType.Movie // Assuming all results are movies for now, can be changed based on actual type.
-                ).apply {
-                    this.posterUrl = "https://bs.to/favicon.ico" // Placeholder poster URL. You may want to scrape the actual poster if available
-                }
-            )
-        }
-
-        // Step 5: Return the list of search results
-        return searchResults
+    // Filter out series that match the search query
+    val searchResults = matches.filter {
+        it.groupValues[3].contains(query, ignoreCase = true)
+    }.map {
+        val seriesId = it.groupValues[1]
+        val title = it.groupValues[3]
+        VideoItem(seriesId, title, "")  // Empty thumbnail for now
     }
+
+    return searchResults.map { it.toSearchResponse(this) }
+}
+
+private fun VideoItem.toSearchResponse(provider: BSProvider): SearchResponse {
+    return provider.newMovieSearchResponse(
+        this.title,
+        "$mainUrl/serie/${this.id}",
+        TvType.Movie
+    ) {
+        // No thumbnail provided in BS.to
+    }
+}
+
     
 
     override suspend fun load(url: String): LoadResponse? {
