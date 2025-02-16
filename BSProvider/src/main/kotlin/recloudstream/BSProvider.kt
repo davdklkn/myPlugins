@@ -62,11 +62,38 @@ class BSProvider : MainAPI() {
         )
     }
 
+    // override suspend fun search(query: String): List<SearchResponse> {
+    //     val response = app.get("$mainUrl/videos?fields=id,title,thumbnail_360_url&limit=10&search=${query.encodeUri()}").text
+    //     val searchResults = tryParseJson<VideoSearchResponse>(response)?.list ?: return emptyList()
+    //     return searchResults.map { it.toSearchResponse(this) }
+    // }
+    // Implementing the search function
     override suspend fun search(query: String): List<SearchResponse> {
-        val response = app.get("$mainUrl/videos?fields=id,title,thumbnail_360_url&limit=10&search=${query.encodeUri()}").text
-        val searchResults = tryParseJson<VideoSearchResponse>(response)?.list ?: return emptyList()
-        return searchResults.map { it.toSearchResponse(this) }
+        // Build the search URL with the query
+        val searchUrl = "$mainUrl/suche?search=${query.encodeUri()}"
+        
+        // Perform the HTTP request to get the search page HTML
+        val html = app.get(searchUrl).text
+        
+        // Parse the HTML to extract series names and links using Jsoup
+        val document = Jsoup.parse(html)
+        val seriesElements = document.select("li > a[href^='/serie/']")
+        
+        // Map the series elements to the SearchResponse format
+        return seriesElements.map {
+            val title = it.text()
+            val url = "$mainUrl${it.attr("href")}"
+            
+            newMovieSearchResponse(
+                title,
+                url,
+                TvType.Movie
+            ) {
+                this.posterUrl = "" // We can leave the poster URL empty for now if not available
+            }
+        }
     }
+    
 
     override suspend fun load(url: String): LoadResponse? {
         val videoId = Regex("dailymotion.com/video/([a-zA-Z0-9]+)").find(url)?.groups?.get(1)?.value
