@@ -67,29 +67,32 @@ class BSProvider : MainAPI() {
     //     val searchResults = tryParseJson<VideoSearchResponse>(response)?.list ?: return emptyList()
     //     return searchResults.map { it.toSearchResponse(this) }
     // }
-    // Implementing the search function
+    // New search function for BS.to
     override suspend fun search(query: String): List<SearchResponse> {
-        // Build the search URL with the query
-        val searchUrl = "$mainUrl/suche?search=${query.encodeUri()}"
+        // Fetch the HTML content of the page with all series
+        val url = "$mainUrl/andere-serien"
+        val response = app.get(url).text
         
-        // Perform the HTTP request to get the search page HTML
-        val html = app.get(searchUrl).text
-        
-        // Parse the HTML to extract series names and links using Jsoup
-        val document = Jsoup.parse(html)
-        val seriesElements = document.select("li > a[href^='/serie/']")
-        
-        // Map the series elements to the SearchResponse format
-        return seriesElements.map {
-            val title = it.text()
-            val url = "$mainUrl${it.attr("href")}"
-            
-            newMovieSearchResponse(
-                title,
-                url,
-                TvType.Movie
+        // Parse the HTML using Jsoup
+        val document = Jsoup.parse(response)
+        val seriesList = document.select("li > a[href^=serie]")
+
+        // Filter and match the series based on the search query
+        val filteredSeries = seriesList.filter {
+            it.text().contains(query, ignoreCase = true)
+        }
+
+        // Map the filtered series to the SearchResponse format
+        return filteredSeries.map {
+            val seriesTitle = it.text()
+            val seriesUrl = "$mainUrl${it.attr("href")}"
+            SearchResponse(
+                title = seriesTitle,
+                url = seriesUrl,
+                type = TvType.Movie // We assume "Movie" as the default type
             ) {
-                this.posterUrl = "" // We can leave the poster URL empty for now if not available
+                // Placeholder for posterUrl since bs.to doesn't provide thumbnails in the search
+                this.posterUrl = "https://via.placeholder.com/150" 
             }
         }
     }
