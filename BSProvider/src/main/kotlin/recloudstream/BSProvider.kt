@@ -17,6 +17,11 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.StringUtils.encodeUri
 import com.lagradost.cloudstream3.utils.loadExtractor
 
+//mine
+import com.fasterxml.jackson.annotation.JsonProperty
+import com.lagradost.cloudstream3.utils.AppUtils
+import org.jsoup.Jsoup
+
 class BSProvider : MainAPI() {
 
     data class VideoSearchResponse(
@@ -68,33 +73,32 @@ class BSProvider : MainAPI() {
     //     return searchResults.map { it.toSearchResponse(this) }
     // }
     // New search function for BS.to
-    override suspend fun search(query: String): List<SearchResponse> {
-        // Fetch the HTML content of the page with all series
-        val url = "$mainUrl/andere-serien"
-        val response = app.get(url).text
-        
-        // Parse the HTML using Jsoup
-        val document = Jsoup.parse(response)
-        val seriesList = document.select("li > a[href^=serie]")
+override suspend fun search(query: String): List<SearchResponse> {
+        val response = app.get("$mainUrl/andere-serien").text
 
-        // Filter and match the series based on the search query
-        val filteredSeries = seriesList.filter {
+        // Use Jsoup to parse the HTML response
+        val doc = Jsoup.parse(response)
+        
+        // Extract all series links (titles and ids)
+        val seriesElements = doc.select("li a[href^=serie/]")
+        
+        // Filter and find series that match the search query (case-insensitive)
+        val matchedSeries = seriesElements.filter {
+            it.attr("title").contains(query, ignoreCase = true) || 
             it.text().contains(query, ignoreCase = true)
         }
 
-        // Map the filtered series to the SearchResponse format
-        return filteredSeries.map {
-            val seriesTitle = it.text()
-            val seriesUrl = "$mainUrl${it.attr("href")}"
-            SearchResponse(
-                title = seriesTitle,
-                url = seriesUrl,
-                type = TvType.Movie // We assume "Movie" as the default type
-            ) {
-                // Placeholder for posterUrl since bs.to doesn't provide thumbnails in the search
-                this.posterUrl = "https://via.placeholder.com/150" 
-            }
+        // Map matched series to the required DumpQuickSearchData format
+        val searchResults = matchedSeries.map {
+            DumpMedia(
+                id = it.attr("href").replace("serie/", ""),
+                domainType = 1, // Set domainType to 1 (representing TV series or similar, as per your format)
+                name = it.text(),
+                releaseTime = "" // We can leave this empty or fetch it if available
+            )
         }
+
+        return listOf(DumpQuickSearchData(searchResults = ArrayList(searchResults)))
     }
     
 
