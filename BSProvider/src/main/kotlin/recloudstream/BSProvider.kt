@@ -38,7 +38,7 @@ class BSProvider : MainAPI() {
         val thumbnail_720_url: String
     )
 
-    override var mainUrl = "https://api.dailymotion.com"
+    override var mainUrl = "https://bs.to"
     override var name = "BS"
     override val supportedTypes = setOf(TvType.Others)
 
