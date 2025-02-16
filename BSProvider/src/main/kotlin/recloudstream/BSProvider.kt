@@ -73,7 +73,7 @@ class BSProvider : MainAPI() {
     //     return searchResults.map { it.toSearchResponse(this) }
     // }
     // New search function for BS.to
-override suspend fun search(query: String): List<SearchResponse> {
+    override suspend fun search(query: String): List<SearchResponse> {
         val response = app.get("$mainUrl/andere-serien").text
 
         // Use Jsoup to parse the HTML response

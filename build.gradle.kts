@@ -81,6 +81,10 @@ subprojects {
         implementation(kotlin("stdlib")) // Adds Standard Kotlin Features
         implementation("com.github.Blatzar:NiceHttp:0.4.11") // HTTP Lib
         implementation("org.jsoup:jsoup:1.18.3") // HTML Parser
+
+        // mine
+        implementation("com.fasterxml.jackson.core:jackson-databind:2.13.0")
+
     }
 }
 
