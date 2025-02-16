@@ -19,8 +19,9 @@ import com.lagradost.cloudstream3.utils.loadExtractor
 
 //mine
 import com.fasterxml.jackson.annotation.JsonProperty
-import com.lagradost.cloudstream3.utils.AppUtils
 import org.jsoup.Jsoup
+import org.jsoup.nodes.Document
+import org.jsoup.nodes.Element
 
 class BSProvider : MainAPI() {
 
@@ -73,32 +74,38 @@ class BSProvider : MainAPI() {
     //     return searchResults.map { it.toSearchResponse(this) }
     // }
     // New search function for BS.to
-    override suspend fun search(query: String): List<SearchResponse> {
-        val response = app.get("$mainUrl/andere-serien").text
+override suspend fun search(query: String): List<SearchResponse> {
+        // Step 1: Encode the search query and construct the search URL
+        val searchUrl = "$mainUrl/suche?q=${query.encodeUri()}"
 
-        // Use Jsoup to parse the HTML response
-        val doc = Jsoup.parse(response)
-        
-        // Extract all series links (titles and ids)
-        val seriesElements = doc.select("li a[href^=serie/]")
-        
-        // Filter and find series that match the search query (case-insensitive)
-        val matchedSeries = seriesElements.filter {
-            it.attr("title").contains(query, ignoreCase = true) || 
-            it.text().contains(query, ignoreCase = true)
-        }
+        // Step 2: Fetch the HTML content of the search results page
+        val response = app.get(searchUrl).text
 
-        // Map matched series to the required DumpQuickSearchData format
-        val searchResults = matchedSeries.map {
-            DumpMedia(
-                id = it.attr("href").replace("serie/", ""),
-                domainType = 1, // Set domainType to 1 (representing TV series or similar, as per your format)
-                name = it.text(),
-                releaseTime = "" // We can leave this empty or fetch it if available
+        // Step 3: Parse the HTML content using Jsoup
+        val document: Document = Jsoup.parse(response)
+
+        // Step 4: Extract the series from the search results
+        val searchResults = mutableListOf<SearchResponse>()
+        
+        // Look for all <li> elements with a <a> tag (these contain the series links)
+        for (element: Element in document.select("li > a")) {
+            val title = element.attr("title")
+            val seriesUrl = element.attr("href")
+
+            // Map each series to the SearchResponse format
+            searchResults.add(
+                SearchResponse(
+                    title = title,
+                    url = "$mainUrl$seriesUrl",
+                    type = TvType.Movie // Assuming all results are movies for now, can be changed based on actual type.
+                ).apply {
+                    this.posterUrl = "https://bs.to/favicon.ico" // Placeholder poster URL. You may want to scrape the actual poster if available
+                }
             )
         }
 
-        return listOf(DumpQuickSearchData(searchResults = ArrayList(searchResults)))
+        // Step 5: Return the list of search results
+        return searchResults
     }
     
 
