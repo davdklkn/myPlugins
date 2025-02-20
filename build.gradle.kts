@@ -84,6 +84,7 @@ subprojects {
 
         // mine
         implementation("com.fasterxml.jackson.core:jackson-databind:2.13.0")
+        implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0")
 
     }
 }
