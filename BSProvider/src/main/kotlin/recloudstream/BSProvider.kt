@@ -70,18 +70,17 @@ class BSProvider : MainAPI() {
     override val hasMainPage = true
 
     // Resolve IP manually and use it with Host header
-    private suspend fun customGet(path: String): String {
-        val hostname = "bs.to"
-        val ip = CustomDNS.lookup(hostname).firstOrNull()?.hostAddress
-            ?: throw Exception("Failed to resolve $hostname")
-        val url = "https://$ip$path" // Use IP with path
-        val request = Request.Builder()
-            .url(url)
-            .header("Host", hostname) // Set Host header to bs.to
-            .build()
-        val response = customClient.newCall(request).execute()
-        return response.body?.string() ?: throw Exception("Failed to fetch $url")
-    }
+private suspend fun customGet(path: String): String {
+    val hostname = "bs.to"
+    val ip = "104.21.63.123" // Replace with the IP from dig
+    val url = "https://$ip$path"
+    val request = Request.Builder()
+        .url(url)
+        .header("Host", hostname)
+        .build()
+    val response = customClient.newCall(request).execute()
+    return response.body?.string() ?: throw Exception("Failed to fetch $url")
+}
 
     override suspend fun search(query: String): List<SearchResponse> = coroutineScope {
         val pageContent = customGet("/andere-serien") // Pass only the path
