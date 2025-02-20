@@ -24,6 +24,10 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+
 class BSProvider : MainAPI() {
 
     data class VideoSearchResponse(
@@ -75,18 +79,22 @@ class BSProvider : MainAPI() {
     //     return searchResults.map { it.toSearchResponse(this) }
     // }
     // New search function for BS.to
-    override suspend fun search(query: String): List<SearchResponse> {
-        // Request the page that lists available series
-        val pageContent = app.get("$mainUrl/andere-serien").text
-        
-        // Regex to match the series list entries
-        val regex = """<a href="serie/([^"]+)" title="([^"]+)">([^<]+)</a>""".toRegex()
-        val matches = regex.findAll(pageContent)
+override suspend fun search(query: String): List<SearchResponse> = coroutineScope {
+    // Request the page that lists available series
+    val pageContent = app.get("$mainUrl/andere-serien").text
+    
+    // Regex to match the series list entries
+    val regex = """<a href="serie/([^"]+)" title="([^"]+)">([^<]+)</a>""".toRegex()
+    val matches = regex.findAll(pageContent)
 
-        // Filter and map series that match the search query
-        return matches.filter {
-            it.groupValues[3].contains(query, ignoreCase = true)
-        }.map { match ->
+    // Filter matches first
+    val filteredMatches = matches.filter {
+        it.groupValues[3].contains(query, ignoreCase = true)
+    }.toList()
+
+    // Process requests in parallel
+    val deferredResults = filteredMatches.map { match ->
+        async {
             val seriesId = match.groupValues[1]
             val seriesUrl = "$mainUrl/serie/$seriesId"
             
@@ -97,7 +105,7 @@ class BSProvider : MainAPI() {
             val posterUrl = posterMatch?.groupValues?.get(1)?.let { "$mainUrl$it" }
 
             object : SearchResponse {
-                override val name: String = match.groupValues[3] // The display title
+                override val name: String = match.groupValues[3]
                 override val url: String = seriesUrl
                 override val apiName: String = "myBS"
                 override var type: TvType? = TvType.TvSeries
@@ -106,8 +114,12 @@ class BSProvider : MainAPI() {
                 override var id: Int? = null
                 override var quality: SearchQuality? = null
             }
-        }.toList()
+        }
     }
+
+    // Wait for all results and return as list
+    deferredResults.awaitAll()
+}
 
     override suspend fun load(url: String): LoadResponse? {
         val videoId = Regex("dailymotion.com/video/([a-zA-Z0-9]+)").find(url)?.groups?.get(1)?.value
