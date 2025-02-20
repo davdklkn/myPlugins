@@ -82,16 +82,21 @@ override suspend fun search(query: String): List<SearchResponse> {
     val regex = """<a href="serie/([^"]+)" title="([^"]+)">([^<]+)</a>""".toRegex()
     val matches = regex.findAll(pageContent)
 
-    // Filter out series that match the search query
-    val searchResults = matches.filter {
+    // Filter and map series that match the search query
+    return matches.filter {
         it.groupValues[3].contains(query, ignoreCase = true)
-    }.map {
-        val seriesId = it.groupValues[1]
-        val title = it.groupValues[3]
-        VideoItem(seriesId, title, "")  // Empty thumbnail for now
-    }
-
-    return searchResults.map { it.toSearchResponse(this) }
+    }.map { match ->
+        object : SearchResponse {
+            override val name: String = match.groupValues[3] // The display title
+            override val url: String = "$mainUrl/serie/${match.groupValues[1]}" // Construct full URL
+            override val apiName: String = this@search::class.java.simpleName // Current class name
+            override var type: TvType? = TvType.Series // Assuming these are series
+            override var posterUrl: String? = null // No poster URL available yet
+            override var posterHeaders: Map<String, String>? = null
+            override var id: Int? = null // No specific ID available from regex
+            override var quality: SearchQuality? = null
+        }
+    }.toList()
 }
 
 private fun VideoItem.toSearchResponse(provider: BSProvider): SearchResponse {
