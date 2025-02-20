@@ -1,13 +1,13 @@
 package recloudstream
 
+import com.lagradost.cloudstream3.Episode
 import com.lagradost.cloudstream3.LoadResponse
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.SearchQuality
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.TvType
-import com.lagradost.cloudstream3.newMovieLoadResponse
-import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
+import com.lagradost.cloudstream3.newTvSeriesLoadResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
 import kotlinx.coroutines.coroutineScope
@@ -18,10 +18,11 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.dnsoverhttps.DnsOverHttps
+import org.jsoup.Jsoup
+import java.net.InetAddress
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
-import java.net.InetAddress
 
 // Bootstrap client with hardcoded Cloudflare IP to avoid initial DNS issues
 val bootstrapClient = OkHttpClient.Builder()
@@ -61,13 +62,9 @@ val customClient: OkHttpClient by lazy {
 }
 
 class BSProvider : MainAPI() {
-    data class VideoSearchResponse(val list: List<VideoItem>)
-    data class VideoItem(val id: String, val title: String, @com.fasterxml.jackson.annotation.JsonProperty("thumbnail_360_url") val thumbnail_360_url: String)
-    data class VideoDetailResponse(val id: String, val title: String, val description: String, @com.fasterxml.jackson.annotation.JsonProperty("thumbnail_720_url") val thumbnail_720_url: String)
-
     override var mainUrl = "https://bs.to"
     override var name = "BS"
-    override val supportedTypes = setOf(TvType.Others)
+    override val supportedTypes = setOf(TvType.TvSeries)
     override var lang = "de"
     override val hasMainPage = true
 
@@ -86,24 +83,21 @@ class BSProvider : MainAPI() {
 
     override suspend fun search(query: String): List<SearchResponse> = coroutineScope {
         val pageContent = customGet("/andere-serien")
-        val regex = """<a href="serie/([^"]+)" title="([^"]+)">([^<]+)</a>""".toRegex()
-        val matches = regex.findAll(pageContent)
+        val doc = Jsoup.parse(pageContent)
+        val seriesLinks = doc.select("a[href^=\"serie/\"]")
+        val filteredLinks = seriesLinks.filter { it.text().contains(query, ignoreCase = true) }
 
-        val filteredMatches = matches.filter {
-            it.groupValues[3].contains(query, ignoreCase = true)
-        }.toList()
-
-        val deferredResults = filteredMatches.map { match ->
+        val deferredResults = filteredLinks.map { link ->
             async {
-                val seriesId = match.groupValues[1]
+                val seriesId = link.attr("href").removePrefix("serie/")
                 val seriesUrl = "$mainUrl/serie/$seriesId"
                 val seriesPage = customGet("/serie/$seriesId")
-                val posterRegex = """<img src="(/public/images/cover/\d+\.jpg)" """.toRegex()
-                val posterMatch = posterRegex.find(seriesPage)
-                val posterUrl = posterMatch?.groupValues?.get(1)?.let { "$mainUrl$it" }
+                val seriesDoc = Jsoup.parse(seriesPage)
+                val posterImg = seriesDoc.selectFirst("img[src^=\"/public/images/cover/\"]")
+                val posterUrl = posterImg?.attr("src")?.let { "$mainUrl$it" }
 
                 object : SearchResponse {
-                    override val name: String = match.groupValues[3]
+                    override val name: String = link.text()
                     override val url: String = seriesUrl
                     override val apiName: String = "myBS"
                     override var type: TvType? = TvType.TvSeries
@@ -118,22 +112,39 @@ class BSProvider : MainAPI() {
     }
 
     override suspend fun load(url: String): LoadResponse? {
-        val videoId = Regex("dailymotion.com/video/([a-zA-Z0-9]+)").find(url)?.groups?.get(1)?.value
-            ?: return null
-        val response = customGet("/video/$videoId?fields=id,title,description,thumbnail_720_url")
-        val videoDetail = tryParseJson<VideoDetailResponse>(response) ?: return null
-        return videoDetail.toLoadResponse(this)
-    }
+        val seriesPage = customGet(url.replace(mainUrl, ""))
+        val doc = Jsoup.parse(seriesPage)
+        val title = doc.selectFirst("h1")?.text() ?: return null
+        val posterImg = doc.selectFirst("img[src^=\"/public/images/cover/\"]")
+        val posterUrl = posterImg?.attr("src")?.let { mainUrl + it }
 
-    private suspend fun VideoDetailResponse.toLoadResponse(provider: BSProvider): LoadResponse {
-        return provider.newMovieLoadResponse(
-            this.title,
-            "https://www.dailymotion.com/video/${this.id}",
-            TvType.Movie,
-            this.id
+        val episodes = mutableListOf<Episode>()
+        val seasons = doc.select("div#seasons > ul")
+        seasons.forEachIndexed { seasonIndex, seasonUl ->
+            val seasonNumber = seasonIndex + 1
+            val episodeLis = seasonUl.select("li")
+            episodeLis.forEachIndexed { episodeIndex, episodeLi ->
+                val episodeA = episodeLi.selectFirst("a")
+                val episodeUrl = mainUrl + episodeA.attr("href")
+                val episodeTitle = episodeA.text()
+                episodes.add(
+                    Episode(
+                        data = episodeUrl,
+                        name = episodeTitle,
+                        season = seasonNumber,
+                        episode = episodeIndex + 1
+                    )
+                )
+            }
+        }
+
+        return newTvSeriesLoadResponse(
+            title,
+            url,
+            TvType.TvSeries,
+            episodes
         ) {
-            plot = description
-            posterUrl = thumbnail_720_url
+            this.posterUrl = posterUrl
         }
     }
 
@@ -143,11 +154,14 @@ class BSProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        loadExtractor(
-            "https://www.dailymotion.com/embed/video/$data",
-            subtitleCallback,
-            callback
-        )
-        return true
+        val episodePage = customGet(data.replace(mainUrl, ""))
+        val doc = Jsoup.parse(episodePage)
+        val iframe = doc.selectFirst("iframe[src*=\"dailymotion.com\"]")
+        val iframeSrc = iframe?.attr("src")
+        if (iframeSrc != null) {
+            loadExtractor(iframeSrc, subtitleCallback, callback)
+            return true
+        }
+        return false
     }
 }
