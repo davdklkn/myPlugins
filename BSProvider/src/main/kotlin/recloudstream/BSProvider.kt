@@ -72,12 +72,11 @@ class BSProvider : MainAPI() {
     // Resolve IP manually and use it with Host header
 private suspend fun customGet(path: String): String {
     val hostname = "bs.to"
-    val ip = "104.21.63.123" // Replace with the IP from dig
+    val ip = "190.115.31.20"
     val url = "https://$ip$path"
     val request = Request.Builder()
         .url(url)
         .header("Host", hostname)
-        .header("User-Agent", "curl/7.68.0") // Match curl’s User-Agent
         .build()
     val response = customClient.newCall(request).execute()
     return response.body?.string() ?: throw Exception("Failed to fetch $url")
