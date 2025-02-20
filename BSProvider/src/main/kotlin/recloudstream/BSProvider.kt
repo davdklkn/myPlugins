@@ -28,6 +28,34 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 
+import okhttp3.Dns
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.net.InetAddress
+
+
+// Custom DNS resolver using 1.1.1.1
+object CustomDNS : Dns {
+    private val cloudflareIp = InetAddress.getByName("1.1.1.1")
+
+    override fun lookup(hostname: String): List<InetAddress> {
+        try {
+            // Use 1.1.1.1 to resolve the hostname
+            val dnsResult = java.net.InetAddress.getAllByName(hostname).toList()
+            return dnsResult.ifEmpty { listOf(cloudflareIp) }
+        } catch (e: Exception) {
+            // Fallback to system DNS if resolution fails
+            return Dns.SYSTEM.lookup(hostname)
+        }
+    }
+}
+
+// Custom HTTP client with 1.1.1.1 DNS
+val customClient = OkHttpClient.Builder()
+    .dns(CustomDNS)
+    .build()
+
+
 class BSProvider : MainAPI() {
 
     data class VideoSearchResponse(
@@ -56,9 +84,20 @@ class BSProvider : MainAPI() {
     override var lang = "de"
 
     override val hasMainPage = true
+    
+
+    
+    // Utility function to perform GET requests with custom client
+    private suspend fun customGet(url: String): String {
+        val request = Request.Builder().url(url).build()
+        val response = customClient.newCall(request).execute()
+        return response.body?.string() ?: throw Exception("Failed to fetch $url")
+    }
+
+
 
     // override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-    //     val response = app.get("$mainUrl/videos?fields=id,title,thumbnail_360_url&limit=26").text
+    //     val response = customGet("$mainUrl/videos?fields=id,title,thumbnail_360_url&limit=26")
     //     val popular = tryParseJson<VideoSearchResponse>(response)?.list ?: emptyList()
 
     //     return newHomePageResponse(
@@ -74,14 +113,14 @@ class BSProvider : MainAPI() {
     // }
 
     // override suspend fun search(query: String): List<SearchResponse> {
-    //     val response = app.get("$mainUrl/videos?fields=id,title,thumbnail_360_url&limit=10&search=${query.encodeUri()}").text
+    //     val response = customGet("$mainUrl/videos?fields=id,title,thumbnail_360_url&limit=10&search=${query.encodeUri()}")
     //     val searchResults = tryParseJson<VideoSearchResponse>(response)?.list ?: return emptyList()
     //     return searchResults.map { it.toSearchResponse(this) }
     // }
     // New search function for BS.to
 override suspend fun search(query: String): List<SearchResponse> = coroutineScope {
     // Request the page that lists available series
-    val pageContent = app.get("$mainUrl/andere-serien").text
+    val pageContent = customGet("$mainUrl/andere-serien")
     
     // Regex to match the series list entries
     val regex = """<a href="serie/([^"]+)" title="([^"]+)">([^<]+)</a>""".toRegex()
@@ -99,7 +138,7 @@ override suspend fun search(query: String): List<SearchResponse> = coroutineScop
             val seriesUrl = "$mainUrl/serie/$seriesId"
             
             // Fetch the series page to get the poster URL
-            val seriesPage = app.get(seriesUrl).text
+            val seriesPage = customGet(seriesUrl)
             val posterRegex = """<img src="(/public/images/cover/\d+\.jpg)" """.toRegex()
             val posterMatch = posterRegex.find(seriesPage)
             val posterUrl = posterMatch?.groupValues?.get(1)?.let { "$mainUrl$it" }
@@ -123,7 +162,7 @@ override suspend fun search(query: String): List<SearchResponse> = coroutineScop
 
     override suspend fun load(url: String): LoadResponse? {
         val videoId = Regex("dailymotion.com/video/([a-zA-Z0-9]+)").find(url)?.groups?.get(1)?.value
-        val response = app.get("$mainUrl/video/$videoId?fields=id,title,description,thumbnail_720_url").text
+        val response = customGet("$mainUrl/video/$videoId?fields=id,title,description,thumbnail_720_url")
         val videoDetail = tryParseJson<VideoDetailResponse>(response) ?: return null
         return videoDetail.toLoadResponse(this)
     }
