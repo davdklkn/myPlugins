@@ -32,28 +32,43 @@ import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.net.InetAddress
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManager
+import javax.net.ssl.X509TrustManager
 
 
 // Custom DNS resolver using 1.1.1.1
 object CustomDNS : Dns {
-    private val cloudflareIp = InetAddress.getByName("1.1.1.1")
-
     override fun lookup(hostname: String): List<InetAddress> {
         try {
-            // Use 1.1.1.1 to resolve the hostname
-            val dnsResult = java.net.InetAddress.getAllByName(hostname).toList()
-            return dnsResult.ifEmpty { listOf(cloudflareIp) }
+            val dns = java.net.InetAddress.getAllByName(hostname).toList()
+            return dns.ifEmpty { listOf(InetAddress.getByName("1.1.1.1")) }
         } catch (e: Exception) {
-            // Fallback to system DNS if resolution fails
             return Dns.SYSTEM.lookup(hostname)
         }
     }
 }
 
-// Custom HTTP client with 1.1.1.1 DNS
-val customClient = OkHttpClient.Builder()
-    .dns(CustomDNS)
-    .build()
+// Custom HTTP client with bypassed SSL verification and custom DNS
+val customClient: OkHttpClient by lazy {
+    // Create a trust manager that does not validate certificates (insecure)
+    val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
+        override fun checkClientTrusted(chain: java.security.cert.X509Certificate?, authType: String?) {}
+        override fun checkServerTrusted(chain: java.security.cert.X509Certificate?, authType: String?) {}
+        override fun getAcceptedIssuers(): Array<java.security.cert.X509Certificate> = arrayOf()
+    })
+
+    // Install the all-trusting trust manager
+    val sslContext = SSLContext.getInstance("SSL").apply {
+        init(null, trustAllCerts, java.security.SecureRandom())
+    }
+
+    OkHttpClient.Builder()
+        .dns(CustomDNS)
+        .sslSocketFactory(sslContext.socketFactory, trustAllCerts[0] as X509TrustManager)
+        .hostnameVerifier { _, _ -> true } // Ignore hostname mismatch
+        .build()
+}
 
 
 class BSProvider : MainAPI() {
@@ -87,9 +102,16 @@ class BSProvider : MainAPI() {
     
 
     
-    // Utility function to perform GET requests with custom client
-    private suspend fun customGet(url: String): String {
-        val request = Request.Builder().url(url).build()
+// Resolve IP manually and use it with Host header
+    private suspend fun customGet(path: String): String {
+        val hostname = "bs.to"
+        val ip = CustomDNS.lookup(hostname).firstOrNull()?.hostAddress
+            ?: throw Exception("Failed to resolve $hostname")
+        val url = "https://$ip$path" // Use IP instead of domain
+        val request = Request.Builder()
+            .url(url)
+            .header("Host", hostname) // Set Host header to bs.to
+            .build()
         val response = customClient.newCall(request).execute()
         return response.body?.string() ?: throw Exception("Failed to fetch $url")
     }
