@@ -16,30 +16,32 @@ import kotlinx.coroutines.awaitAll
 import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.net.InetAddress
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.dns.DnsOverHttps
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
-import org.xbill.DNS.Lookup
-import org.xbill.DNS.SimpleResolver
-import org.xbill.DNS.Type
+import java.net.InetAddress
 
-// Custom DNS resolver forcing 1.1.1.1
-object CustomDNS : Dns {
-    override fun lookup(hostname: String): List<InetAddress> {
-        return try {
-            val resolver = SimpleResolver("1.1.1.1")
-            val lookup = Lookup(hostname, Type.A)
-            lookup.setResolver(resolver)
-            val records = lookup.run()
-            records?.map { InetAddress.getByName(it.rdataToString()) } ?: Dns.SYSTEM.lookup(hostname)
-        } catch (e: Exception) {
-            Dns.SYSTEM.lookup(hostname) // Fallback to system DNS on failure
+// Bootstrap client with hardcoded Cloudflare IP to avoid initial DNS issues
+val bootstrapClient = OkHttpClient.Builder()
+    .dns(object : Dns {
+        override fun lookup(hostname: String): List<InetAddress> {
+            if (hostname == "cloudflare-dns.com") {
+                return listOf(InetAddress.getByName("104.16.248.249"))
+            }
+            return Dns.SYSTEM.lookup(hostname)
         }
-    }
-}
+    })
+    .build()
 
-// Custom HTTP client with bypassed SSL verification and custom DNS
+// Configure DNS over HTTPS with Cloudflare’s 1.1.1.1
+val dns = DnsOverHttps.Builder()
+    .client(bootstrapClient)
+    .url("https://cloudflare-dns.com/dns-query".toHttpUrl())
+    .build()
+
+// Custom HTTP client with DoH and SSL bypass
 val customClient: OkHttpClient by lazy {
     val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
         override fun checkClientTrusted(chain: Array<out java.security.cert.X509Certificate>?, authType: String?) {}
@@ -52,9 +54,9 @@ val customClient: OkHttpClient by lazy {
     }
 
     OkHttpClient.Builder()
-        .dns(CustomDNS)
+        .dns(dns)
         .sslSocketFactory(sslContext.socketFactory, trustAllCerts[0] as X509TrustManager)
-        .hostnameVerifier { _, _ -> true } // Ignore hostname mismatch
+        .hostnameVerifier { _, _ -> true }
         .build()
 }
 
@@ -69,22 +71,21 @@ class BSProvider : MainAPI() {
     override var lang = "de"
     override val hasMainPage = true
 
-    // Resolve IP manually and use it with Host header
-private suspend fun customGet(path: String): String {
-    val hostname = "bs.to"
-    val ip = "190.115.31.20"
-    val url = "https://$ip$path"
-    val request = Request.Builder()
-        .url(url)
-        .header("Host", hostname)
-        .build()
-    val response = customClient.newCall(request).execute()
-    return response.body?.string() ?: throw Exception("Failed to fetch $url")
-}
+    private suspend fun customGet(path: String): String {
+        val hostname = "bs.to"
+        val ip = dns.lookup(hostname).firstOrNull()?.hostAddress ?: "104.21.63.123" // Fallback to known working IP
+        val url = "https://$ip$path"
+        val request = Request.Builder()
+            .url(url)
+            .header("Host", hostname)
+            .header("User-Agent", "curl/7.68.0") // Mimic curl
+            .build()
+        val response = customClient.newCall(request).execute()
+        return response.body?.string() ?: throw Exception("Failed to fetch $url")
+    }
 
     override suspend fun search(query: String): List<SearchResponse> = coroutineScope {
-        val pageContent = customGet("/andere-serien") // Pass only the path
-        
+        val pageContent = customGet("/andere-serien")
         val regex = """<a href="serie/([^"]+)" title="([^"]+)">([^<]+)</a>""".toRegex()
         val matches = regex.findAll(pageContent)
 
@@ -95,8 +96,8 @@ private suspend fun customGet(path: String): String {
         val deferredResults = filteredMatches.map { match ->
             async {
                 val seriesId = match.groupValues[1]
-                val seriesUrl = "$mainUrl/serie/$seriesId" // Keep URL for SearchResponse
-                val seriesPage = customGet("/serie/$seriesId") // Path only for request
+                val seriesUrl = "$mainUrl/serie/$seriesId"
+                val seriesPage = customGet("/serie/$seriesId")
                 val posterRegex = """<img src="(/public/images/cover/\d+\.jpg)" """.toRegex()
                 val posterMatch = posterRegex.find(seriesPage)
                 val posterUrl = posterMatch?.groupValues?.get(1)?.let { "$mainUrl$it" }
