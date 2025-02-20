@@ -77,6 +77,7 @@ private suspend fun customGet(path: String): String {
     val request = Request.Builder()
         .url(url)
         .header("Host", hostname)
+        .header("User-Agent", "curl/7.68.0") // Match curl’s User-Agent
         .build()
     val response = customClient.newCall(request).execute()
     return response.body?.string() ?: throw Exception("Failed to fetch $url")
