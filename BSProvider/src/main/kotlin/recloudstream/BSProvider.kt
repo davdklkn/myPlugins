@@ -20,15 +20,22 @@ import java.net.InetAddress
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
+import org.xbill.DNS.Lookup
+import org.xbill.DNS.SimpleResolver
+import org.xbill.DNS.Type
 
-// Custom DNS resolver forcing 1.1.1.1 (simplified for now)
+// Custom DNS resolver forcing 1.1.1.1
 object CustomDNS : Dns {
     override fun lookup(hostname: String): List<InetAddress> {
-        val resolver = SimpleResolver("1.1.1.1")
-        val lookup = Lookup(hostname, Type.A)
-        lookup.setResolver(resolver)
-        val records = lookup.run()
-        return records?.map { InetAddress.getByName(it.rdataToString()) } ?: Dns.SYSTEM.lookup(hostname)
+        return try {
+            val resolver = SimpleResolver("1.1.1.1")
+            val lookup = Lookup(hostname, Type.A)
+            lookup.setResolver(resolver)
+            val records = lookup.run()
+            records?.map { InetAddress.getByName(it.rdataToString()) } ?: Dns.SYSTEM.lookup(hostname)
+        } catch (e: Exception) {
+            Dns.SYSTEM.lookup(hostname) // Fallback to system DNS on failure
+        }
     }
 }
 
@@ -77,7 +84,6 @@ class BSProvider : MainAPI() {
     }
 
     override suspend fun search(query: String): List<SearchResponse> = coroutineScope {
-        // Request the page that lists available series
         val pageContent = customGet("/andere-serien") // Pass only the path
         
         val regex = """<a href="serie/([^"]+)" title="([^"]+)">([^<]+)</a>""".toRegex()
