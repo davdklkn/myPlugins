@@ -90,7 +90,7 @@ class BSProvider : MainAPI() {
             object : SearchResponse {
                 override val name: String = match.groupValues[3] // The display title
                 override val url: String = "$mainUrl/serie/${match.groupValues[1]}" // Construct full URL
-                override val apiName: String = this@search::class.java.simpleName // Current class name
+                override val apiName: String = "myBS" // Current class name
                 override var type: TvType? = TvType.TvSeries // Assuming these are series
                 override var posterUrl: String? = null // No poster URL available yet
                 override var posterHeaders: Map<String, String>? = null
