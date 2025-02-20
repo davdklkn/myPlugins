@@ -17,7 +17,7 @@ import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.dns.DnsOverHttps
+import okhttp3.dnsoverhttps.DnsOverHttps
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
