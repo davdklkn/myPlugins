@@ -6,6 +6,7 @@ import com.lagradost.cloudstream3.LoadResponse
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.MainPageRequest
 import com.lagradost.cloudstream3.SearchResponse
+import com.lagradost.cloudstream3.SearchQuality
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.app
@@ -74,42 +75,30 @@ class BSProvider : MainAPI() {
     //     return searchResults.map { it.toSearchResponse(this) }
     // }
     // New search function for BS.to
-override suspend fun search(query: String): List<SearchResponse> {
-    // Request the page that lists available series
-    val pageContent = app.get("$mainUrl/andere-serien").text
-    
-    // Regex to match the series list entries
-    val regex = """<a href="serie/([^"]+)" title="([^"]+)">([^<]+)</a>""".toRegex()
-    val matches = regex.findAll(pageContent)
+    override suspend fun search(query: String): List<SearchResponse> {
+        // Request the page that lists available series
+        val pageContent = app.get("$mainUrl/andere-serien").text
+        
+        // Regex to match the series list entries
+        val regex = """<a href="serie/([^"]+)" title="([^"]+)">([^<]+)</a>""".toRegex()
+        val matches = regex.findAll(pageContent)
 
-    // Filter and map series that match the search query
-    return matches.filter {
-        it.groupValues[3].contains(query, ignoreCase = true)
-    }.map { match ->
-        object : SearchResponse {
-            override val name: String = match.groupValues[3] // The display title
-            override val url: String = "$mainUrl/serie/${match.groupValues[1]}" // Construct full URL
-            override val apiName: String = this@search::class.java.simpleName // Current class name
-            override var type: TvType? = TvType.Series // Assuming these are series
-            override var posterUrl: String? = null // No poster URL available yet
-            override var posterHeaders: Map<String, String>? = null
-            override var id: Int? = null // No specific ID available from regex
-            override var quality: SearchQuality? = null
-        }
-    }.toList()
-}
-
-private fun VideoItem.toSearchResponse(provider: BSProvider): SearchResponse {
-    return provider.newMovieSearchResponse(
-        this.title,
-        "$mainUrl/serie/${this.id}",
-        TvType.Movie
-    ) {
-        // No thumbnail provided in BS.to
-    }
-}
-
-    
+        // Filter and map series that match the search query
+        return matches.filter {
+            it.groupValues[3].contains(query, ignoreCase = true)
+        }.map { match ->
+            object : SearchResponse {
+                override val name: String = match.groupValues[3] // The display title
+                override val url: String = "$mainUrl/serie/${match.groupValues[1]}" // Construct full URL
+                override val apiName: String = this@search::class.java.simpleName // Current class name
+                override var type: TvType? = TvType.TvSeries // Assuming these are series
+                override var posterUrl: String? = null // No poster URL available yet
+                override var posterHeaders: Map<String, String>? = null
+                override var id: Int? = null // No specific ID available from regex
+                override var quality: SearchQuality? = null
+            }
+        }.toList()
+    }    
 
     override suspend fun load(url: String): LoadResponse? {
         val videoId = Regex("dailymotion.com/video/([a-zA-Z0-9]+)").find(url)?.groups?.get(1)?.value
