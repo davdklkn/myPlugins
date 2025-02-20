@@ -53,21 +53,21 @@ class BSProvider : MainAPI() {
 
     override val hasMainPage = true
 
-    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val response = app.get("$mainUrl/videos?fields=id,title,thumbnail_360_url&limit=26").text
-        val popular = tryParseJson<VideoSearchResponse>(response)?.list ?: emptyList()
+    // override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
+    //     val response = app.get("$mainUrl/videos?fields=id,title,thumbnail_360_url&limit=26").text
+    //     val popular = tryParseJson<VideoSearchResponse>(response)?.list ?: emptyList()
 
-        return newHomePageResponse(
-            listOf(
-                HomePageList(
-                    "Popular",
-                    popular.map { it.toSearchResponse(this) },
-                    true
-                ),
-            ),
-            false
-        )
-    }
+    //     return newHomePageResponse(
+    //         listOf(
+    //             HomePageList(
+    //                 "Popular",
+    //                 popular.map { it.toSearchResponse(this) },
+    //                 true
+    //             ),
+    //         ),
+    //         false
+    //     )
+    // }
 
     // override suspend fun search(query: String): List<SearchResponse> {
     //     val response = app.get("$mainUrl/videos?fields=id,title,thumbnail_360_url&limit=10&search=${query.encodeUri()}").text
@@ -87,18 +87,27 @@ class BSProvider : MainAPI() {
         return matches.filter {
             it.groupValues[3].contains(query, ignoreCase = true)
         }.map { match ->
+            val seriesId = match.groupValues[1]
+            val seriesUrl = "$mainUrl/serie/$seriesId"
+            
+            // Fetch the series page to get the poster URL
+            val seriesPage = app.get(seriesUrl).text
+            val posterRegex = """<img src="(/public/images/cover/\d+\.jpg)" """.toRegex()
+            val posterMatch = posterRegex.find(seriesPage)
+            val posterUrl = posterMatch?.groupValues?.get(1)?.let { "$mainUrl$it" }
+
             object : SearchResponse {
                 override val name: String = match.groupValues[3] // The display title
-                override val url: String = "$mainUrl/serie/${match.groupValues[1]}" // Construct full URL
-                override val apiName: String = "myBS" // Current class name
-                override var type: TvType? = TvType.TvSeries // Assuming these are series
-                override var posterUrl: String? = null // No poster URL available yet
+                override val url: String = seriesUrl
+                override val apiName: String = "myBS"
+                override var type: TvType? = TvType.TvSeries
+                override var posterUrl: String? = posterUrl
                 override var posterHeaders: Map<String, String>? = null
-                override var id: Int? = null // No specific ID available from regex
+                override var id: Int? = null
                 override var quality: SearchQuality? = null
             }
         }.toList()
-    }    
+    }
 
     override suspend fun load(url: String): LoadResponse? {
         val videoId = Regex("dailymotion.com/video/([a-zA-Z0-9]+)").find(url)?.groups?.get(1)?.value
@@ -107,15 +116,15 @@ class BSProvider : MainAPI() {
         return videoDetail.toLoadResponse(this)
     }
 
-    private fun VideoItem.toSearchResponse(provider: BSProvider): SearchResponse {
-        return provider.newMovieSearchResponse(
-            this.title,
-            "https://www.dailymotion.com/video/${this.id}",
-            TvType.Movie
-        ) {
-            this.posterUrl = thumbnail_360_url
-        }
-    }
+    // private fun VideoItem.toSearchResponse(provider: BSProvider): SearchResponse {
+    //     return provider.newMovieSearchResponse(
+    //         this.title,
+    //         "https://www.dailymotion.com/video/${this.id}",
+    //         TvType.Movie
+    //     ) {
+    //         this.posterUrl = thumbnail_360_url
+    //     }
+    // }
 
     private suspend fun VideoDetailResponse.toLoadResponse(provider: BSProvider): LoadResponse {
         return provider.newMovieLoadResponse(
