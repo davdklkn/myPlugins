@@ -8,6 +8,7 @@ import com.lagradost.cloudstream3.SearchQuality
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.newTvSeriesLoadResponse
+import com.lagradost.cloudstream3.extractors.Voe
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.Qualities
 import kotlinx.coroutines.coroutineScope
@@ -68,15 +69,18 @@ class BSProvider : MainAPI() {
     override var lang = "de"
     override val hasMainPage = true
 
-    private suspend fun customGet(path: String): String {
+    private suspend fun customGet(path: String, referer: String? = null): String {
         val hostname = "bs.to"
-        val ip = dns.lookup(hostname).firstOrNull()?.hostAddress ?: "104.21.63.123" // Fallback to known working IP
+        val ip = dns.lookup(hostname).firstOrNull()?.hostAddress ?: "104.21.63.123"
         val url = "https://$ip$path"
-        val request = Request.Builder()
+        val requestBuilder = Request.Builder()
             .url(url)
             .header("Host", hostname)
-            .header("User-Agent", "curl/7.68.0") // Mimic curl
-            .build()
+            .header("User-Agent", "curl/7.68.0")
+        if (referer != null) {
+            requestBuilder.header("Referer", referer)
+        }
+        val request = requestBuilder.build()
         val response = customClient.newCall(request).execute()
         return response.body?.string() ?: throw Exception("Failed to fetch $url")
     }
@@ -154,27 +158,32 @@ class BSProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean = coroutineScope {
-        val episodePage = customGet(data.removePrefix(mainUrl))
-        val doc = Jsoup.parse(episodePage)
-
-        val hosterLinks = doc.select("td:nth-child(3) a").map { a ->
-            val hosterName = a.attr("title")
-            val hosterUrl = a.attr("href").let { if (it.startsWith("http")) it else "$mainUrl$it" }
-
-            ExtractorLink(
-                source = this@BSProvider.name,
-                name = hosterName,
-                url = hosterUrl,
-                referer = data,
-                quality = Qualities.Unknown.value,
-                isM3u8 = false
-            )
+        // For now, focus on VOE hoster
+        val supportedHosters = listOf("VOE")
+        supportedHosters.forEach { hosterName ->
+            // Construct hoster-specific URL (e.g., episodeUrl + "/VOE")
+            val hosterUrl = "$data/$hosterName"
+            try {
+                // Fetch hoster-specific page with episode URL as referer
+                val hosterPage = customGet(hosterUrl.removePrefix(mainUrl), referer = data)
+                val doc = Jsoup.parse(hosterPage)
+                // Find iframe containing VOE page URL
+                val iframe = doc.selectFirst("section.serie .hoster-player > iframe")
+                if (iframe != null) {
+                    val iframeSrc = iframe.attr("src")
+                    // Use Voe extractor to get direct stream links
+                    val extractor = Voe()
+                    // Pass iframeSrc and hosterUrl as referer to the extractor
+                    extractor.getUrl(iframeSrc, referer = hosterUrl, subtitleCallback, callback)
+                } else {
+                    println("No iframe found for $hosterName at $hosterUrl")
+                }
+            } catch (e: Exception) {
+                println("Failed to extract links for $hosterName at $hosterUrl: ${e.message}")
+            }
         }
-
-        hosterLinks.forEach { link ->
-            callback(link) // Pass each ExtractorLink to the callback
-        }
-
-        true // Return true to indicate successful loading
+        true
     }
+
+
 }
