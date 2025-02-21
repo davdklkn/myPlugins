@@ -162,59 +162,64 @@ override suspend fun loadLinks(
     callback: (ExtractorLink) -> Unit
 ): Boolean = coroutineScope {
     try {
-        // Step 1: Fetch the episode page to get VOE hoster URLs
         println("Fetching episode page: $data")
         val episodePage = customGet(data.removePrefix(mainUrl))
         val episodeDoc = Jsoup.parse(episodePage)
-
-        // Extract VOE hoster links from the episode page
         val hosterLinks = episodeDoc.select("td:nth-child(3) a[title=\"VOE\"]")
+
         hosterLinks.forEach { link ->
             val hosterUrl = link.attr("href").let { if (it.startsWith("http")) it else "$mainUrl$it" }
             println("Found VOE hoster URL: $hosterUrl")
 
             try {
-                // Step 2: Fetch the hoster-specific page to get the data-lid
-                println("Fetching hoster page: $hosterUrl")
                 val hosterPage = customGet(hosterUrl.removePrefix(mainUrl), referer = data)
                 val hosterDoc = Jsoup.parse(hosterPage)
                 val hosterPlayer = hosterDoc.selectFirst(".hoster-player")
-                val linkId = hosterPlayer?.attr("data-lid") ?: throw Exception("No data-lid found")
-                println("Extracted data-lid: $linkId")
+                val linkId = hosterPlayer?.attr("data-lid")
 
-                // Step 3: Simulate the AJAX request to get the VOE link
-                val ajaxUrl = "$mainUrl/ajax/embed.php"
-                val requestBuilder = Request.Builder()
-                    .url(ajaxUrl)
-                    .header("Host", "bs.to")
-                    .header("User-Agent", "curl/7.68.0")
-                    .header("Referer", hosterUrl)
-                    .header("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
-                    .header("X-Requested-With", "XMLHttpRequest") // Simulate AJAX
-                    .post("LID=$linkId&ticket=".toRequestBody("application/x-www-form-urlencoded".toMediaType()))
-                val request = requestBuilder.build()
-                val response = customClient.newCall(request).execute()
-                val responseBody = response.body?.string() ?: throw Exception("Failed to fetch AJAX response")
+                if (linkId != null) {
+                    println("Extracted data-lid: $linkId")
+                    val ajaxUrl = "$mainUrl/ajax/embed.php"
+                    val request = Request.Builder()
+                        .url(ajaxUrl)
+                        .header("Host", "bs.to")
+                        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                        .header("Referer", hosterUrl)
+                        .header("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
+                        .header("X-Requested-With", "XMLHttpRequest")
+                        .post("LID=$linkId&ticket=".toRequestBody("application/x-www-form-urlencoded".toMediaType()))
+                        .build()
+                    val response = customClient.newCall(request).execute()
+                    val responseBody = response.body?.string() ?: throw Exception("Empty AJAX response")
 
-                // Parse the JSON response
-                val json = JSONObject(responseBody)
-                if (json.optBoolean("success")) {
-                    val voeUrl = json.getString("link")
-                    println("Found VOE URL: $voeUrl")
-                    val extractor = Voe()
-                    extractor.getUrl(voeUrl, referer = hosterUrl, subtitleCallback, callback)
+                    val json = JSONObject(responseBody)
+                    if (json.optBoolean("success")) {
+                        val voeUrl = json.getString("link")
+                        println("Found VOE URL: $voeUrl")
+                        Voe().getUrl(voeUrl, referer = hosterUrl, callback = callback)
+                    } else {
+                        println("AJAX failed, falling back to script parsing: $responseBody")
+                        val scriptContent = hosterDoc.select("script").map { it.html() }.find { it.contains("sources = {") }
+                        val voeUrl = scriptContent?.let { Regex("hls': '(https://.*?)'").find(it)?.groupValues?.get(1) }
+                        if (voeUrl != null) {
+                            println("Extracted VOE URL from script: $voeUrl")
+                            Voe().getUrl(voeUrl, referer = hosterUrl, callback = callback)
+                        } else {
+                            println("No VOE URL found in scripts")
+                        }
+                    }
                 } else {
-                    println("AJAX request failed: $responseBody")
+                    println("No data-lid found, skipping $hosterUrl")
                 }
             } catch (e: Exception) {
-                println("Failed to extract VOE link from $hosterUrl: ${e.message}")
+                println("Error processing $hosterUrl: ${e.message}")
             }
         }
+        true
     } catch (e: Exception) {
         println("Failed to process episode page $data: ${e.message}")
+        false
     }
-
-    true // Indicate that link extraction was attempted
 }
 
 
