@@ -148,8 +148,13 @@ class BSProvider : MainAPI() {
         }
     }
 
-    override suspend fun getStreamLinks(url: String): List<ExtractorLink> {
-        val episodePage = customGet(url.removePrefix(mainUrl))
+    override suspend fun loadLinks(
+        data: String,
+        isCasting: Boolean,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean = coroutineScope {
+        val episodePage = customGet(data.removePrefix(mainUrl))
         val doc = Jsoup.parse(episodePage)
 
         val hosterLinks = doc.select("td:nth-child(3) a").map { a ->
@@ -157,15 +162,19 @@ class BSProvider : MainAPI() {
             val hosterUrl = a.attr("href").let { if (it.startsWith("http")) it else "$mainUrl$it" }
 
             ExtractorLink(
-                source = this.name,
+                source = this@BSProvider.name,
                 name = hosterName,
                 url = hosterUrl,
-                referer = url,
+                referer = data,
                 quality = Qualities.Unknown.value,
                 isM3u8 = false
             )
         }
 
-        return hosterLinks
+        hosterLinks.forEach { link ->
+            callback(link) // Pass each ExtractorLink to the callback
+        }
+
+        true // Return true to indicate successful loading
     }
 }
