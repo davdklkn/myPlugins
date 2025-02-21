@@ -159,26 +159,44 @@ override suspend fun loadLinks(
     callback: (ExtractorLink) -> Unit
 ): Boolean = coroutineScope {
     try {
-        // Fetch the episode page directly
+        // Step 1: Fetch the episode page to get VOE hoster URLs
         println("Fetching episode page: $data")
         val episodePage = customGet(data.removePrefix(mainUrl))
-        val doc = Jsoup.parse(episodePage)
+        val episodeDoc = Jsoup.parse(episodePage)
 
         // Extract VOE hoster links from the episode page
-        val hosterLinks = doc.select("td:nth-child(3) a[title=\"VOE\"]")
+        val hosterLinks = episodeDoc.select("td:nth-child(3) a[title=\"VOE\"]")
         hosterLinks.forEach { link ->
             val hosterUrl = link.attr("href").let { if (it.startsWith("http")) it else "$mainUrl$it" }
             println("Found VOE hoster URL: $hosterUrl")
+
             try {
-                // Attempt to use the hoster URL directly with Voe extractor
+                // Step 2: Fetch the hoster-specific page (e.g., .../VOE)
+                println("Fetching hoster page: $hosterUrl")
+                val hosterPage = customGet(hosterUrl.removePrefix(mainUrl), referer = data)
+                val hosterDoc = Jsoup.parse(hosterPage)
+
+                // Step 3: Extract data-lid or direct VOE link if present
+                val hosterPlayer = hosterDoc.selectFirst(".hoster-player")
+                val linkId = hosterPlayer?.attr("data-lid") ?: throw Exception("No data-lid found")
+                println("Extracted data-lid: $linkId")
+
+                // Step 4: Attempt to fetch the VOE link (hypothetical endpoint)
+                // This is a guess; we need the actual API or behavior
+                val voeLinkPage = customGet("/get_stream?link_id=$linkId", referer = hosterUrl)
+                val voeDoc = Jsoup.parse(voeLinkPage)
+                val voeUrl = voeDoc.selectFirst("a[href*=\"voe.sx\"]")?.attr("href")
+                    ?: throw Exception("No voe.sx link found in response")
+
+                println("Found VOE URL: $voeUrl")
                 val extractor = Voe()
-                extractor.getUrl(hosterUrl, referer = data, subtitleCallback, callback)
+                extractor.getUrl(voeUrl, referer = hosterUrl, subtitleCallback, callback)
             } catch (e: Exception) {
                 println("Failed to extract VOE link from $hosterUrl: ${e.message}")
             }
         }
     } catch (e: Exception) {
-        println("Failed to fetch episode page $data: ${e.message}")
+        println("Failed to process episode page $data: ${e.message}")
     }
 
     // Debug: Add specific VOE URLs for testing
