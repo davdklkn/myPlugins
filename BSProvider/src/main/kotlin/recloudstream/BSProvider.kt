@@ -67,7 +67,7 @@ class BSProvider : MainAPI() {
     override var name = "BS"
     override val supportedTypes = setOf(TvType.TvSeries)
     override var lang = "de"
-    override val hasMainPage = true
+    override val hasMainPage = false
 
     private suspend fun customGet(path: String, referer: String? = null): String {
         val hostname = "bs.to"
