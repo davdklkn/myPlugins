@@ -152,38 +152,57 @@ class BSProvider : MainAPI() {
         }
     }
 
-    override suspend fun loadLinks(
-        data: String,
-        isCasting: Boolean,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean = coroutineScope {
-        // For now, focus on VOE hoster
-        val supportedHosters = listOf("VOE")
-        supportedHosters.forEach { hosterName ->
-            // Construct hoster-specific URL (e.g., episodeUrl + "/VOE")
-            val hosterUrl = "$data/$hosterName"
-            try {
-                // Fetch hoster-specific page with episode URL as referer
-                val hosterPage = customGet(hosterUrl.removePrefix(mainUrl), referer = data)
-                val doc = Jsoup.parse(hosterPage)
-                // Find iframe containing VOE page URL
-                val iframe = doc.selectFirst("section.serie .hoster-player > iframe")
-                if (iframe != null) {
-                    val iframeSrc = iframe.attr("src")
-                    // Use Voe extractor to get direct stream links
-                    val extractor = Voe()
-                    // Pass iframeSrc and hosterUrl as referer to the extractor
-                    extractor.getUrl(iframeSrc, referer = hosterUrl, subtitleCallback, callback)
-                } else {
-                    println("No iframe found for $hosterName at $hosterUrl")
-                }
-            } catch (e: Exception) {
-                println("Failed to extract links for $hosterName at $hosterUrl: ${e.message}")
+override suspend fun loadLinks(
+    data: String,
+    isCasting: Boolean,
+    subtitleCallback: (SubtitleFile) -> Unit,
+    callback: (ExtractorLink) -> Unit
+): Boolean = coroutineScope {
+    // List of hosters to process from the episode page
+    val supportedHosters = listOf("VOE")
+
+    // Process VOE links from the episode page
+    supportedHosters.forEach { hosterName ->
+        val hosterUrl = "$data/$hosterName"
+        try {
+            println("Attempting to fetch hoster page: $hosterUrl with referer: $data")
+            val hosterPage = customGet(hosterUrl.removePrefix(mainUrl), referer = data)
+            val doc = Jsoup.parse(hosterPage)
+            val iframe = doc.selectFirst("section.serie .hoster-player > iframe")
+            if (iframe != null) {
+                val iframeSrc = iframe.attr("src")
+                println("Found iframe src: $iframeSrc for $hosterName")
+                val extractor = Voe()
+                // Extract stream URL using Voe extractor
+                extractor.getUrl(iframeSrc, referer = hosterUrl, subtitleCallback, callback)
+            } else {
+                println("No iframe found for $hosterName at $hosterUrl")
             }
+        } catch (e: Exception) {
+            println("Failed to extract links for $hosterName at $hosterUrl: ${e.message}")
         }
-        true
     }
+
+    // Debug: Add specific VOE URLs for testing
+    val debugVoeUrls = listOf(
+        "https://voe.sx/ka99vvkimzyx",
+        "https://voe.sx/e/ka99vvkimzyx",
+        "https://maxfinishseveral.com/e/ka99vvkimzyx"
+    )
+
+    debugVoeUrls.forEach { debugUrl ->
+        try {
+            println("Debug: Attempting to extract video link from $debugUrl")
+            val extractor = Voe()
+            // Use the episode URL (data) as referer for consistency
+            extractor.getUrl(debugUrl, referer = data, subtitleCallback, callback)
+        } catch (e: Exception) {
+            println("Debug: Failed to extract video link from $debugUrl: ${e.message}")
+        }
+    }
+
+    true // Indicate that link extraction was attempted
+}
 
 
 }
