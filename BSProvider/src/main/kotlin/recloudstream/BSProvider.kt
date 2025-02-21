@@ -9,7 +9,7 @@ import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.newTvSeriesLoadResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.loadExtractor
+import com.lagradost.cloudstream3.utils.Qualities
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -111,4 +111,61 @@ class BSProvider : MainAPI() {
         deferredResults.awaitAll()
     }
 
+    override suspend fun load(url: String): LoadResponse = coroutineScope {
+        val seriesPage = customGet(url.removePrefix(mainUrl))
+        val doc = Jsoup.parse(seriesPage)
+
+        val title = doc.selectFirst("h2")?.text()?.substringBefore("Staffel")?.trim() ?: "Unknown Title"
+        val posterUrl = doc.selectFirst("img[src^=\"/public/images/cover/\"]")?.attr("src")?.let { "$mainUrl$it" }
+        val description = doc.selectFirst("#sp_left p")?.text()
+
+        val seasonLinks = doc.select(".seasons ul li a").map { it.attr("href") }
+
+        val episodes = seasonLinks.map { seasonUrl ->
+            async {
+                val seasonPage = customGet("/$seasonUrl")
+                val seasonDoc = Jsoup.parse(seasonPage)
+                val seasonNumber = seasonUrl.split("/")[2].toIntOrNull() ?: 1
+
+                seasonDoc.select("table.episodes tr").mapIndexed { index, ep ->
+                    val epNum = ep.selectFirst("td:first-child a")?.text()?.toIntOrNull() ?: (index + 1)
+                    val epTitle = ep.selectFirst("td:nth-child(2) strong")?.text() ?: "Episode $epNum"
+                    val epUrl = ep.selectFirst("td:first-child a")?.attr("href")?.let { "$mainUrl$it" } ?: ""
+
+                    Episode(
+                        name = epTitle,
+                        season = seasonNumber,
+                        episode = epNum,
+                        data = epUrl
+                    )
+                }
+            }
+        }.awaitAll().flatten()
+
+        newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
+            this.posterUrl = posterUrl
+            this.plot = description
+        }
+    }
+
+    override suspend fun getStreamLinks(url: String): List<ExtractorLink> {
+        val episodePage = customGet(url.removePrefix(mainUrl))
+        val doc = Jsoup.parse(episodePage)
+
+        val hosterLinks = doc.select("td:nth-child(3) a").map { a ->
+            val hosterName = a.attr("title")
+            val hosterUrl = a.attr("href").let { if (it.startsWith("http")) it else "$mainUrl$it" }
+
+            ExtractorLink(
+                source = this.name,
+                name = hosterName,
+                url = hosterUrl,
+                referer = url,
+                quality = Qualities.Unknown.value,
+                isM3u8 = false
+            )
+        }
+
+        return hosterLinks
+    }
 }
