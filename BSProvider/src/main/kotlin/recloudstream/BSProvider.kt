@@ -103,7 +103,7 @@ class BSProvider : MainAPI() {
                 object : SearchResponse {
                     override val name: String = link.text()
                     override val url: String = seriesUrl
-                    override val apiName: String = "myBS"
+                    override val apiName: String = "BS"
                     override var type: TvType? = TvType.TvSeries
                     override var posterUrl: String? = posterUrl
                     override var posterHeaders: Map<String, String>? = null
@@ -158,43 +158,38 @@ override suspend fun loadLinks(
     subtitleCallback: (SubtitleFile) -> Unit,
     callback: (ExtractorLink) -> Unit
 ): Boolean = coroutineScope {
-    // List of hosters to process from the episode page
-    val supportedHosters = listOf("VOE")
+    try {
+        // Fetch the episode page directly
+        println("Fetching episode page: $data")
+        val episodePage = customGet(data.removePrefix(mainUrl))
+        val doc = Jsoup.parse(episodePage)
 
-    // Process VOE links from the episode page
-    supportedHosters.forEach { hosterName ->
-        val hosterUrl = "$data/$hosterName"
-        try {
-            println("Attempting to fetch hoster page: $hosterUrl with referer: $data")
-            val hosterPage = customGet(hosterUrl.removePrefix(mainUrl), referer = data)
-            val doc = Jsoup.parse(hosterPage)
-            val iframe = doc.selectFirst("section.serie .hoster-player > iframe")
-            if (iframe != null) {
-                val iframeSrc = iframe.attr("src")
-                println("Found iframe src: $iframeSrc for $hosterName")
+        // Extract VOE hoster links from the episode page
+        val hosterLinks = doc.select("td:nth-child(3) a[title=\"VOE\"]")
+        hosterLinks.forEach { link ->
+            val hosterUrl = link.attr("href").let { if (it.startsWith("http")) it else "$mainUrl$it" }
+            println("Found VOE hoster URL: $hosterUrl")
+            try {
+                // Attempt to use the hoster URL directly with Voe extractor
                 val extractor = Voe()
-                // Extract stream URL using Voe extractor
-                extractor.getUrl(iframeSrc, referer = hosterUrl, subtitleCallback, callback)
-            } else {
-                println("No iframe found for $hosterName at $hosterUrl")
+                extractor.getUrl(hosterUrl, referer = data, subtitleCallback, callback)
+            } catch (e: Exception) {
+                println("Failed to extract VOE link from $hosterUrl: ${e.message}")
             }
-        } catch (e: Exception) {
-            println("Failed to extract links for $hosterName at $hosterUrl: ${e.message}")
         }
+    } catch (e: Exception) {
+        println("Failed to fetch episode page $data: ${e.message}")
     }
 
     // Debug: Add specific VOE URLs for testing
     val debugVoeUrls = listOf(
-        "https://voe.sx/ka99vvkimzyx",
-        "https://voe.sx/e/ka99vvkimzyx",
-        "https://maxfinishseveral.com/e/ka99vvkimzyx"
+        "https://voe.sx/ka99vvkimzyx"
     )
 
     debugVoeUrls.forEach { debugUrl ->
         try {
             println("Debug: Attempting to extract video link from $debugUrl")
             val extractor = Voe()
-            // Use the episode URL (data) as referer for consistency
             extractor.getUrl(debugUrl, referer = data, subtitleCallback, callback)
         } catch (e: Exception) {
             println("Debug: Failed to extract video link from $debugUrl: ${e.message}")
