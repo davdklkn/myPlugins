@@ -171,47 +171,44 @@ override suspend fun loadLinks(
             println("Found VOE hoster URL: $hosterUrl")
 
             try {
-                // Step 2: Fetch the hoster-specific page (e.g., .../VOE)
+                // Step 2: Fetch the hoster-specific page to get the data-lid
                 println("Fetching hoster page: $hosterUrl")
                 val hosterPage = customGet(hosterUrl.removePrefix(mainUrl), referer = data)
                 val hosterDoc = Jsoup.parse(hosterPage)
-
-                // Step 3: Extract data-lid or direct VOE link if present
                 val hosterPlayer = hosterDoc.selectFirst(".hoster-player")
                 val linkId = hosterPlayer?.attr("data-lid") ?: throw Exception("No data-lid found")
                 println("Extracted data-lid: $linkId")
 
-                // Step 4: Attempt to fetch the VOE link (hypothetical endpoint)
-                // This is a guess; we need the actual API or behavior
-                val voeLinkPage = customGet("/get_stream?link_id=$linkId", referer = hosterUrl)
-                val voeDoc = Jsoup.parse(voeLinkPage)
-                val voeUrl = voeDoc.selectFirst("a[href*=\"voe.sx\"]")?.attr("href")
-                    ?: throw Exception("No voe.sx link found in response")
+                // Step 3: Simulate the AJAX request to get the VOE link
+                val ajaxUrl = "$mainUrl/ajax/embed.php"
+                val requestBuilder = Request.Builder()
+                    .url(ajaxUrl)
+                    .header("Host", "bs.to")
+                    .header("User-Agent", "curl/7.68.0")
+                    .header("Referer", hosterUrl)
+                    .header("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
+                    .header("X-Requested-With", "XMLHttpRequest") // Simulate AJAX
+                    .post("LID=$linkId&ticket=".toRequestBody("application/x-www-form-urlencoded".toMediaType()))
+                val request = requestBuilder.build()
+                val response = customClient.newCall(request).execute()
+                val responseBody = response.body?.string() ?: throw Exception("Failed to fetch AJAX response")
 
-                println("Found VOE URL: $voeUrl")
-                val extractor = Voe()
-                extractor.getUrl(voeUrl, referer = hosterUrl, subtitleCallback, callback)
+                // Parse the JSON response
+                val json = JSONObject(responseBody)
+                if (json.optBoolean("success")) {
+                    val voeUrl = json.getString("link")
+                    println("Found VOE URL: $voeUrl")
+                    val extractor = Voe()
+                    extractor.getUrl(voeUrl, referer = hosterUrl, subtitleCallback, callback)
+                } else {
+                    println("AJAX request failed: $responseBody")
+                }
             } catch (e: Exception) {
                 println("Failed to extract VOE link from $hosterUrl: ${e.message}")
             }
         }
     } catch (e: Exception) {
         println("Failed to process episode page $data: ${e.message}")
-    }
-
-    // Debug: Add specific VOE URLs for testing
-    val debugVoeUrls = listOf(
-        "https://voe.sx/ka99vvkimzyx"
-    )
-
-    debugVoeUrls.forEach { debugUrl ->
-        try {
-            println("Debug: Attempting to extract video link from $debugUrl")
-            val extractor = Voe()
-            extractor.getUrl(debugUrl, referer = data, subtitleCallback, callback)
-        } catch (e: Exception) {
-            println("Debug: Failed to extract video link from $debugUrl: ${e.message}")
-        }
     }
 
     true // Indicate that link extraction was attempted
