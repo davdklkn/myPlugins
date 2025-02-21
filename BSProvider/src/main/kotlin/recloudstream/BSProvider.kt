@@ -196,14 +196,14 @@ override suspend fun loadLinks(
                     if (json.optBoolean("success")) {
                         val voeUrl = json.getString("link")
                         println("Found VOE URL: $voeUrl")
-                        Voe().getUrl(voeUrl, referer = hosterUrl, callback = callback)
+                        Voe().getUrl(voeUrl, referer = hosterUrl, subtitleCallback = subtitleCallback, callback = callback)
                     } else {
                         println("AJAX failed, falling back to script parsing: $responseBody")
                         val scriptContent = hosterDoc.select("script").map { it.html() }.find { it.contains("sources = {") }
                         val voeUrl = scriptContent?.let { Regex("hls': '(https://.*?)'").find(it)?.groupValues?.get(1) }
                         if (voeUrl != null) {
                             println("Extracted VOE URL from script: $voeUrl")
-                            Voe().getUrl(voeUrl, referer = hosterUrl, callback = callback)
+                            Voe().getUrl(voeUrl, referer = hosterUrl, subtitleCallback = subtitleCallback, callback = callback)
                         } else {
                             println("No VOE URL found in scripts")
                         }
